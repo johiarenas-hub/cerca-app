@@ -242,6 +242,18 @@ button.ghost:hover { border-color: var(--accent-2); color: var(--text); backgrou
 .me { display: flex; align-items: center; gap: 10px; }
 .me .avatar { width: 40px; height: 40px; font-size: 1.3rem; }
 .me .name { font-weight: 700; font-size: 1.02rem; }
+.edit-profile-btn {
+  background: none;
+  border: none;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s, background 0.15s;
+}
+.edit-profile-btn:hover { opacity: 1; background: var(--bg-soft); }
 
 .avatar {
   display: inline-flex;

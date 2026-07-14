@@ -10,6 +10,52 @@ const INTERESTS = [
 ];
 const MAX_INTERESTS = 6;
 
+const TOKEN_KEY = "cerca_token_v1";
+const PROFILE_KEY = "cerca_profile_v1";
+
+// El token identifica "este navegador/pestaña" de forma estable entre
+// recargas, para que al volver no se borre el perfil ni los matches ya
+// confirmados (el servidor no tiene base de datos: usa este token para
+// reconocerte al reconectar).
+function getOrCreateToken() {
+  try {
+    let token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      token = (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      localStorage.setItem(TOKEN_KEY, token);
+    }
+    return token;
+  } catch {
+    return null; // localStorage no disponible (modo privado estricto, etc.)
+  }
+}
+
+function saveProfile(profile) {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  } catch {
+    /* si no hay localStorage, simplemente no se recuerda entre visitas */
+  }
+}
+
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearSavedSession() {
+  try {
+    localStorage.removeItem(PROFILE_KEY);
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* nada que limpiar */
+  }
+}
+
 const state = {
   ws: null,
   id: null,
@@ -75,21 +121,34 @@ function renderInterestsPicker() {
 }
 renderInterestsPicker();
 
-$("#btn-start").addEventListener("click", () => {
-  const name = $("#name").value.trim() || "Anónimo";
-  const bio = $("#bio").value.trim();
-  const lookingFor = $("#lookingFor").value.trim();
-  const interests = [...state.selectedInterests];
-  state.profile = { name, emoji: state.selectedEmoji, bio, lookingFor, interests };
+function startWithProfile(profile, opts) {
+  opts = opts || {};
+  state.profile = profile;
 
-  $("#me-avatar").textContent = state.selectedEmoji;
-  $("#me-name").textContent = name;
-  $("#match-avatar-me").textContent = state.selectedEmoji;
+  $("#me-avatar").textContent = profile.emoji;
+  $("#me-name").textContent = profile.name;
+  $("#match-avatar-me").textContent = profile.emoji;
+
+  if (!opts.skipSave) saveProfile(profile);
 
   requestNotificationPermission();
   showScreen("main");
   connect();
   startLocation();
+}
+
+$("#btn-start").addEventListener("click", () => {
+  const name = $("#name").value.trim() || "Anónimo";
+  const bio = $("#bio").value.trim();
+  const lookingFor = $("#lookingFor").value.trim();
+  const interests = [...state.selectedInterests];
+  startWithProfile({ name, emoji: state.selectedEmoji, bio, lookingFor, interests });
+});
+
+$("#btn-edit-profile").addEventListener("click", () => {
+  if (!confirm("¿Cambiar de perfil? Se cerrará esta sesión (perfil, matches y sala del juego) y empezarás de cero.")) return;
+  clearSavedSession();
+  location.reload();
 });
 
 function requestNotificationPermission() {
@@ -120,12 +179,17 @@ function showScreen(name) {
 
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  state.ws = new WebSocket(`${proto}://${location.host}`);
+  const token = getOrCreateToken();
+  const url = token ? `${proto}://${location.host}/?token=${encodeURIComponent(token)}` : `${proto}://${location.host}`;
+  state.ws = new WebSocket(url);
 
   state.ws.addEventListener("open", () => {
+    const wasReconnecting = reconnectAttempts > 0;
+    reconnectAttempts = 0;
     send({ type: "join", ...state.profile });
     send({ type: "visibility", visible: state.visible });
     send({ type: "radius", meters: state.radius });
+    if (wasReconnecting) setLocationStatus("Reconectado ✓");
   });
 
   state.ws.addEventListener("message", (evt) => {
@@ -134,8 +198,27 @@ function connect() {
   });
 
   state.ws.addEventListener("close", () => {
-    setLocationStatus("Conexión perdida. Recarga la página para reintentar.", true);
+    if (!state.profile) return; // cierre antes de haber entrado (no hay nada que reconectar)
+    setLocationStatus("Conexión perdida. Reconectando…", true);
+    scheduleReconnect();
   });
+}
+
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+
+// Reconecta solo automáticamente (sin recargar la página) si se cae la
+// conexión mientras la app ya estaba en uso — por ejemplo al volver de
+// segundo plano en el móvil. Gracias al token guardado, el servidor
+// reconoce que eres la misma persona y no pierdes tu perfil ni tus matches.
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  const delay = Math.min(1000 * 2 ** reconnectAttempts, 15000);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    reconnectAttempts++;
+    connect();
+  }, delay);
 }
 
 function send(obj) {
@@ -148,6 +231,12 @@ function handleServerMessage(msg) {
   switch (msg.type) {
     case "welcome":
       state.id = msg.id;
+      if (Array.isArray(msg.matches) && msg.matches.length) {
+        msg.matches.forEach((m) => {
+          if (!state.matches.has(m.id)) state.matches.set(m.id, m);
+        });
+        renderMatches();
+      }
       break;
     case "nearby":
       state.nearby = msg.users;
@@ -657,3 +746,22 @@ function escapeHtml(str) {
   div.textContent = str;
   return div.innerHTML;
 }
+
+// ---------- Reanudar sesión guardada ----------
+// Si ya habías creado un perfil en este navegador, te salta la pantalla de
+// inicio y te reconecta directamente con tu perfil, tus intereses y tus
+// matches ya confirmados (usando el token guardado en localStorage).
+(function tryResumeSession() {
+  const saved = loadProfile();
+  if (!saved || !saved.name) return;
+
+  state.selectedEmoji = saved.emoji || state.selectedEmoji;
+  state.selectedInterests = new Set(saved.interests || []);
+  $("#name").value = saved.name || "";
+  $("#bio").value = saved.bio || "";
+  $("#lookingFor").value = saved.lookingFor || "";
+  renderEmojiPicker();
+  renderInterestsPicker();
+
+  startWithProfile(saved, { skipSave: true });
+})();

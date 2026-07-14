@@ -30,8 +30,12 @@
 //     { type: "room:pass" }           // solo el jugador seleccionado
 //     { type: "room:next" }           // host o jugador seleccionado
 //
+//   El cliente se conecta a la URL "/?token=XXXX" con un token propio guardado
+//   en localStorage, para poder reconectar como "la misma persona" (sin perder
+//   perfil ni matches) tras cerrar la pestaña, recargar o perder la conexión.
+//
 //   Servidor -> Cliente
-//     { type: "welcome", id }
+//     { type: "welcome", id, matches: [{ id, name, emoji }] }
 //     { type: "nearby", users: [{ id, name, emoji, bio, lookingFor, distanceMeters, distanceLabel, liked, matched }] }
 //     { type: "match", id, name, emoji }
 //     { type: "chat", from, text, ts, self? }
@@ -47,6 +51,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
+const { URL } = require("url");
 const { WebSocketServer, OPEN } = require("./lib/mini-ws");
 const { createGameModule } = require("./lib/party-game");
 
@@ -115,28 +120,81 @@ function roundDistance(meters) {
 }
 
 function send(ws, obj) {
-  if (ws.readyState === OPEN) ws.send(JSON.stringify(obj));
+  if (ws && ws.readyState === OPEN) ws.send(JSON.stringify(obj));
 }
 
 const gameModule = createGameModule({ clients, send });
 
-wss.on("connection", (ws) => {
-  const id = crypto.randomUUID();
-  const client = {
-    id,
-    ws,
-    profile: null, // { name, emoji, bio, lookingFor }
-    lat: null,
-    lng: null,
-    visible: false,
-    radius: 500, // metros, por defecto
-    likes: new Set(), // a quien le di like
-    blocked: new Set(),
-    matches: new Set(), // ids con match confirmado
-    roomCode: null, // sala del juego "Verdad o Reto" en la que esta, si alguna
-  };
-  clients.set(id, client);
-  send(ws, { type: "welcome", id });
+// Cuanto tiempo se conserva el perfil/matches de alguien tras desconectarse
+// (cierre de pestaña, cambio de red, recarga) por si vuelve a conectar con el
+// mismo token guardado en su navegador. Pasado este tiempo sin volver, se
+// borra (no hay base de datos: todo vive en memoria del servidor).
+const OFFLINE_CLEANUP_MS = 30 * 60 * 1000; // 30 minutos
+
+function buildMatchesPayload(client) {
+  return [...client.matches]
+    .map((mid) => {
+      const other = clients.get(mid);
+      if (!other || !other.profile) return null;
+      return { id: mid, name: other.profile.name, emoji: other.profile.emoji };
+    })
+    .filter(Boolean);
+}
+
+function scheduleCleanup(client) {
+  client.ws = null;
+  client.visible = false; // deja de aparecer como "cerca" mientras esta desconectado
+  gameModule.leaveRoom(client); // no dejar al resto del grupo esperando a alguien desconectado
+  if (client.cleanupTimer) clearTimeout(client.cleanupTimer);
+  client.cleanupTimer = setTimeout(() => {
+    if (clients.get(client.id) === client && !client.ws) {
+      clients.delete(client.id);
+    }
+  }, OFFLINE_CLEANUP_MS);
+}
+
+wss.on("connection", (ws, req) => {
+  // El cliente manda un token propio guardado en localStorage (?token=...) para
+  // poder reconectar como "la misma persona" tras cerrar la pestaña o perder la
+  // conexión, sin perder su perfil ni sus matches ya confirmados.
+  let token = null;
+  try {
+    const parsed = new URL(req.url, "http://localhost");
+    const raw = parsed.searchParams.get("token");
+    if (raw) token = raw.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 100) || null;
+  } catch {
+    token = null;
+  }
+
+  let client = token ? clients.get(token) : null;
+
+  if (client) {
+    // Reconexion: recupera perfil, likes, matches y bloqueos ya existentes.
+    if (client.cleanupTimer) {
+      clearTimeout(client.cleanupTimer);
+      client.cleanupTimer = null;
+    }
+    client.ws = ws;
+  } else {
+    const id = token || crypto.randomUUID();
+    client = {
+      id,
+      ws,
+      profile: null, // { name, emoji, bio, lookingFor }
+      lat: null,
+      lng: null,
+      visible: false,
+      radius: 500, // metros, por defecto
+      likes: new Set(), // a quien le di like
+      blocked: new Set(),
+      matches: new Set(), // ids con match confirmado
+      roomCode: null, // sala del juego "Verdad o Reto" en la que esta, si alguna
+      cleanupTimer: null,
+    };
+    clients.set(id, client);
+  }
+
+  send(ws, { type: "welcome", id: client.id, matches: buildMatchesPayload(client) });
 
   ws.on("message", (raw) => {
     let msg;
@@ -148,15 +206,8 @@ wss.on("connection", (ws) => {
     handleMessage(client, msg);
   });
 
-  ws.on("close", () => {
-    gameModule.leaveRoom(client);
-    clients.delete(id);
-  });
-
-  ws.on("error", () => {
-    gameModule.leaveRoom(client);
-    clients.delete(id);
-  });
+  ws.on("close", () => scheduleCleanup(client));
+  ws.on("error", () => scheduleCleanup(client));
 });
 
 function handleMessage(client, msg) {

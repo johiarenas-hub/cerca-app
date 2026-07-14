@@ -26,6 +26,12 @@ proximidad, no como producto terminado.
    como etiqueta en su tarjeta.
 7. Incluye un juego de fiesta "Verdad o Reto" (18+) — ver sección dedicada
    más abajo.
+8. Tu perfil queda guardado en el navegador: si cierras la pestaña, recargas
+   la página o pierdes la conexión un momento (por ejemplo al cambiar de
+   app en el móvil), al volver a abrir la app te reconoce automáticamente
+   — no hace falta rellenar el formulario otra vez, y conservas tus matches
+   ya confirmados. Puedes pulsar el ✏️ junto a tu nombre para cambiar de
+   perfil y empezar de cero.
 
 ## Juego "Verdad o Reto" (18+)
 
@@ -105,12 +111,41 @@ durante las pruebas.
   contenido, ni protección contra perfiles falsos — imprescindibles antes
   de un lanzamiento real, especialmente tratándose de una app de citas.
 
+## Sesión persistente (perfil y matches)
+
+Cada navegador genera un token propio (guardado en `localStorage`) la
+primera vez que creas un perfil. Ese token viaja en la conexión WebSocket
+(`/?token=...`) para que el servidor te reconozca como la misma persona en
+conexiones futuras:
+
+- Al recargar la página o reabrir la pestaña, la app salta directamente a
+  la pantalla principal con tu perfil ya cargado (`localStorage`, clave
+  `cerca_profile_v1`) y reconecta sola.
+- Si la conexión se corta (por ejemplo al minimizar el navegador en el
+  móvil), la app reintenta reconectar sola con backoff progresivo — no
+  hace falta recargar manualmente.
+- El servidor conserva tu perfil, tus "me interesa" dados/recibidos, tus
+  matches y tus bloqueos durante 30 minutos tras desconectarte, por si
+  vuelves; pasado ese tiempo sin reconectar, se borran (no hay base de
+  datos, todo vive en memoria).
+- El botón ✏️ junto a tu nombre borra el token y el perfil guardados
+  (`clearSavedSession()` en `app.js`) y recarga la página para empezar de
+  cero con una identidad nueva.
+- Esto **no** guarda el historial de mensajes de chat: los mensajes en sí
+  no se persisten en ningún sitio (ni servidor ni navegador), así que si
+  recargas la página, la conversación de un match se muestra vacía de
+  nuevo aunque el match siga activo.
+
 ## Limitaciones conocidas (es un prototipo, no un producto)
 
 - **No hay base de datos**: todo vive en memoria del servidor. Si
-  reinicias el servidor, se pierden perfiles, matches y mensajes.
+  reinicias el servidor, se pierden todos los perfiles, matches y
+  mensajes (la persistencia de sesión de arriba solo sobrevive mientras el
+  proceso del servidor sigue corriendo).
 - **No hay autenticación real**: cualquiera que abra la app crea un perfil
-  nuevo sin verificación.
+  nuevo sin verificación, y el "token" de sesión es solo un identificador
+  local del navegador, no una contraseña — si alguien copia ese token
+  podría hacerse pasar por ti mientras el servidor lo recuerde.
 - **Bluetooth no se usa**: los navegadores web no permiten "emitir" señales
   Bluetooth de forma pasiva (el Web Bluetooth API solo sirve para
   emparejar dispositivos manualmente), así que la proximidad se calcula por

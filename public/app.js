@@ -377,7 +377,7 @@ function renderMatches() {
 // ---------- Celebración de match ----------
 
 let pendingMatch = null;
-const CONFETTI_COLORS = ["#ff5e8f", "#7c5cff", "#38d9ff", "#34e7a0", "#ffd166"];
+const CONFETTI_COLORS = ["#c9992e", "#8a6a1f", "#e8c873", "#fff6df", "#2f8f5b"];
 
 function showMatchCelebration(match) {
   pendingMatch = match;

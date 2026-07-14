@@ -1,0 +1,13 @@
+{
+  "name": "cerca-app",
+  "version": "0.1.0",
+  "description": "Prototipo: conecta con alguien cuando estan cerca fisicamente (proximidad + match mutuo + chat). Sin dependencias externas.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

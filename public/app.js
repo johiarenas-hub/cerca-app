@@ -24,6 +24,11 @@ const state = {
   selectedEmoji: EMOJIS[0],
   selectedInterests: new Set(),
   notifiedInterestIds: new Set(), // ids ya notificados por interes en comun (evita spam)
+  // --- Juego "Verdad o Reto" ---
+  gameConsent: false,
+  createIntensity: "suave",
+  room: null, // ultimo "room:state" recibido del servidor
+  lastPhase: null,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -158,6 +163,20 @@ function handleServerMessage(msg) {
     }
     case "chat": {
       appendChatMessage(msg);
+      break;
+    }
+    case "room:state": {
+      state.room = msg;
+      renderGame();
+      break;
+    }
+    case "room:error": {
+      const errBox = $("#game-home-error");
+      if (errBox) {
+        errBox.textContent = msg.message;
+        errBox.style.display = "block";
+      }
+      showToast(msg.message);
       break;
     }
     case "error":
@@ -464,6 +483,164 @@ $("#chat-send").addEventListener("click", sendChat);
 $("#chat-input").addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendChat();
 });
+
+// ---------- Juego: Verdad o Reto (18+) ----------
+// Independiente del radar de proximidad: se juega dentro de una sala con
+// código, entre personas que ya están reunidas físicamente y deciden
+// voluntariamente participar.
+
+$("#tab-game").addEventListener("click", openGame);
+
+function openGame() {
+  showScreen("game");
+  document.getElementById("screen-game").classList.add("active");
+  renderGame();
+}
+
+$("#game-back").addEventListener("click", () => {
+  document.getElementById("screen-game").classList.remove("active");
+  showScreen("main");
+});
+
+$("#consent-checkbox").addEventListener("change", (e) => {
+  $("#consent-continue").disabled = !e.target.checked;
+});
+$("#consent-continue").addEventListener("click", () => {
+  state.gameConsent = true;
+  renderGame();
+});
+
+function wireIntensityPicker(containerId, onSelect) {
+  const buttons = document.querySelectorAll(`#${containerId} button`);
+  buttons.forEach((b) => {
+    b.addEventListener("click", () => {
+      buttons.forEach((x) => x.classList.remove("selected"));
+      b.classList.add("selected");
+      onSelect(b.dataset.value);
+    });
+  });
+}
+wireIntensityPicker("intensity-picker-create", (v) => {
+  state.createIntensity = v;
+});
+wireIntensityPicker("intensity-picker-room", (v) => {
+  send({ type: "room:setIntensity", intensity: v });
+});
+
+$("#btn-create-room").addEventListener("click", () => {
+  send({ type: "room:create", intensity: state.createIntensity || "suave" });
+});
+
+$("#btn-join-room").addEventListener("click", () => {
+  const code = $("#join-code").value.trim().toUpperCase();
+  if (!code) return;
+  $("#game-home-error").style.display = "none";
+  send({ type: "room:join", code });
+});
+
+$("#btn-start-game").addEventListener("click", () => send({ type: "room:start" }));
+$("#btn-spin").addEventListener("click", () => send({ type: "room:spin" }));
+$("#btn-choice-truth").addEventListener("click", () => send({ type: "room:choice", choice: "truth" }));
+$("#btn-choice-dare").addEventListener("click", () => send({ type: "room:choice", choice: "dare" }));
+$("#btn-pass").addEventListener("click", () => send({ type: "room:pass" }));
+$("#btn-next-mine").addEventListener("click", () => send({ type: "room:next" }));
+$("#btn-next-host").addEventListener("click", () => send({ type: "room:next" }));
+
+$("#btn-leave-room").addEventListener("click", () => {
+  send({ type: "room:leave" });
+  state.room = null;
+  state.lastPhase = null;
+  renderGame();
+});
+
+function spinWheelAnimation() {
+  const wheel = $("#wheel");
+  if (!wheel) return;
+  wheel.style.transition = "none";
+  wheel.classList.remove("spinning");
+  void wheel.offsetWidth; // fuerza reflow para poder reiniciar la animación
+  wheel.style.transition = "";
+  requestAnimationFrame(() => wheel.classList.add("spinning"));
+}
+
+function renderGame() {
+  const consentDone = state.gameConsent;
+  $("#game-consent").style.display = consentDone ? "none" : "flex";
+  $("#game-home").style.display = consentDone && !state.room ? "flex" : "none";
+  $("#game-room").style.display = consentDone && state.room ? "flex" : "none";
+
+  if (!consentDone || !state.room) return;
+
+  const room = state.room;
+  $("#room-code-display").textContent = room.code;
+
+  const playersWrap = $("#room-players");
+  playersWrap.innerHTML = "";
+  room.players.forEach((p) => {
+    const el = document.createElement("div");
+    el.className = "room-player" + (p.id === room.hostId ? " is-host" : "");
+    el.innerHTML = `<span class="avatar">${p.emoji}</span> ${escapeHtml(p.name)}${
+      p.id === room.hostId ? ' <span class="host-badge">HOST</span>' : ""
+    }`;
+    playersWrap.appendChild(el);
+  });
+
+  const isHost = room.hostId === state.id;
+  const isSelected = room.selectedId === state.id;
+
+  ["lobby", "ready", "choosing", "prompt"].forEach((phase) => {
+    const el = $(`#game-phase-${phase}`);
+    if (el) el.style.display = room.phase === phase ? "flex" : "none";
+  });
+
+  if (room.phase === "lobby") {
+    $("#host-controls-lobby").style.display = isHost ? "block" : "none";
+    $("#waiting-host-lobby").style.display = isHost ? "none" : "block";
+    if (isHost) {
+      $("#btn-start-game").disabled = room.players.length < 2;
+      document.querySelectorAll("#intensity-picker-room button").forEach((b) => {
+        b.classList.toggle("selected", b.dataset.value === room.intensity);
+      });
+    }
+  }
+
+  if (room.phase === "ready") {
+    $("#btn-spin").style.display = isHost ? "block" : "none";
+    $("#waiting-host-spin").style.display = isHost ? "none" : "block";
+  }
+
+  if (room.phase === "choosing") {
+    const sel = room.players.find((p) => p.id === room.selectedId);
+    $("#selected-player-choosing").innerHTML = sel
+      ? `<span class="avatar">${sel.emoji}</span><span class="name">${escapeHtml(sel.name)}</span><span class="caption">¡Le toca elegir!</span>`
+      : "";
+    $("#my-choice-buttons").style.display = isSelected ? "flex" : "none";
+    $("#waiting-choice").style.display = !isSelected ? "block" : "none";
+    if (!isSelected) {
+      $("#waiting-choice").textContent = sel ? `Esperando a que ${sel.name} elija Verdad o Reto…` : "";
+    }
+  }
+
+  if (room.phase === "prompt") {
+    const sel = room.players.find((p) => p.id === room.selectedId);
+    $("#selected-player-prompt").innerHTML = sel
+      ? `<span class="avatar">${sel.emoji}</span><span class="name">${escapeHtml(sel.name)}</span>`
+      : "";
+    $("#prompt-badge").textContent = room.choice === "dare" ? "🔥 Reto" : "💬 Verdad";
+    $("#prompt-text").textContent = room.prompt || "";
+    $("#prompt-buttons-mine").style.display = isSelected ? "flex" : "none";
+    $("#btn-next-host").style.display = !isSelected && isHost ? "block" : "none";
+    $("#waiting-prompt").style.display = !isSelected && !isHost ? "block" : "none";
+    if (!isSelected && !isHost) {
+      $("#waiting-prompt").textContent = sel ? `${sel.name} está respondiendo/cumpliendo…` : "";
+    }
+  }
+
+  if (state.lastPhase === "ready" && room.phase === "choosing") {
+    spinWheelAnimation();
+  }
+  state.lastPhase = room.phase;
+}
 
 // ---------- Utils ----------
 

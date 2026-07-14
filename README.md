@@ -24,6 +24,35 @@ proximidad, no como producto terminado.
    Cuando alguien cerca comparte al menos uno contigo, te llega una
    notificación específica por eso (no solo por estar cerca), y se muestra
    como etiqueta en su tarjeta.
+7. Incluye un juego de fiesta "Verdad o Reto" (18+) — ver sección dedicada
+   más abajo.
+
+## Juego "Verdad o Reto" (18+)
+
+Pestaña "🎉 Juego" dentro de la app. **Es independiente del radar de
+proximidad/citas**: no usa ubicación ni matches, y solo se juega dentro de
+una sala con código de 4 caracteres, pensada para un grupo que ya está
+reunido físicamente (por ejemplo, en una fiesta) y decide voluntariamente
+jugar junto.
+
+- Antes de entrar, se muestra un aviso de que es solo para mayores de 18
+  años y hay que confirmar con una casilla que todos los presentes
+  participan voluntariamente.
+- Alguien crea una sala (elige nivel de contenido: 😄 Suave o 🌶️ Picante) y
+  comparte el código de 4 caracteres con el grupo; el resto se une
+  introduciendo ese código.
+- El anfitrión gira una ruleta que selecciona aleatoriamente a una persona
+  del grupo (selección hecha en el servidor, igual para todos en tiempo
+  real). Esa persona elige Verdad o Reto y el grupo entero ve la
+  pregunta/reto que le tocó.
+- Se puede "pasar" a otra pregunta/reto en cualquier momento, y salir de la
+  sala cuando se quiera — nadie está obligado a nada.
+- El contenido "picante" es coqueto para adultos (besos en la mejilla,
+  piropos, abrazos, quitarse un accesorio, preguntas sobre citas y
+  atracción) pero **deliberadamente no incluye actos sexuales explícitos ni
+  desnudos** — los bancos de preguntas/retos están en
+  `lib/party-game.js` y se pueden editar libremente si quieres ajustar el
+  tono.
 
 ## Cómo probarlo
 
@@ -114,7 +143,8 @@ durante las pruebas.
 cerca-app/
 ├── server.js          # Servidor HTTP + lógica de proximidad/match/chat
 ├── lib/
-│   └── mini-ws.js      # Implementación mínima de WebSocket (sin dependencias)
+│   ├── mini-ws.js      # Implementación mínima de WebSocket (sin dependencias)
+│   └── party-game.js    # Lógica de salas + bancos de preguntas/retos del juego 18+
 ├── public/
 │   ├── index.html       # Estructura de la app
 │   ├── style.css        # Estilos (mobile-first)

@@ -87,6 +87,7 @@
     <div class="tabs">
       <button id="tab-nearby" class="active">Cerca de ti</button>
       <button id="tab-matches">Matches</button>
+      <button id="tab-game">🎉 Juego</button>
     </div>
 
     <!-- NEARBY VIEW -->
@@ -119,6 +120,117 @@
     <div class="chat-input-row">
       <input type="text" id="chat-input" placeholder="Escribe un mensaje…" maxlength="500" />
       <button id="chat-send">Enviar</button>
+    </div>
+  </section>
+
+  <!-- JUEGO: VERDAD O RETO -->
+  <section id="screen-game" class="chat-screen">
+    <div class="chat-header">
+      <button class="back" id="game-back">←</button>
+      <span class="name">🎉 Verdad o Reto</span>
+    </div>
+
+    <div id="game-body" class="game-body">
+
+      <!-- Aviso 18+ / consentimiento -->
+      <div id="game-consent" class="game-panel">
+        <div class="safety-note game-warning">
+          <strong>Solo para mayores de 18 años.</strong> Este juego incluye
+          retos y verdades coquetos para adultos (por ejemplo, un beso en la
+          mejilla, piropos, o preguntas sobre citas y atracción) — nada
+          explícito. Es para un grupo que ya está reunido físicamente y
+          decide jugar de forma voluntaria. Cualquiera puede pasar un reto o
+          salir de la sala en cualquier momento, sin dar explicaciones.
+        </div>
+        <label class="consent-check">
+          <input type="checkbox" id="consent-checkbox" />
+          Confirmo que soy mayor de 18 años y que todas las personas que van
+          a jugar participan de forma voluntaria.
+        </label>
+        <button class="primary" id="consent-continue" disabled>Entrar al juego</button>
+      </div>
+
+      <!-- Crear / unirse a sala -->
+      <div id="game-home" class="game-panel" style="display:none;">
+        <h2>Crear una sala</h2>
+        <label>Nivel de contenido</label>
+        <div class="chip-picker" id="intensity-picker-create">
+          <button type="button" data-value="suave" class="selected">😄 Suave</button>
+          <button type="button" data-value="picante">🌶️ Picante</button>
+        </div>
+        <button class="primary" id="btn-create-room">Crear sala</button>
+
+        <div class="game-divider">o</div>
+
+        <h2>Unirme a una sala</h2>
+        <label for="join-code">Código de sala</label>
+        <input type="text" id="join-code" maxlength="4" placeholder="Ej: A3F9" style="text-transform:uppercase; letter-spacing: 3px; font-weight:700;" />
+        <button class="primary" id="btn-join-room">Unirme</button>
+        <div id="game-home-error" class="game-error" style="display:none;"></div>
+      </div>
+
+      <!-- Sala: lobby / partida en curso -->
+      <div id="game-room" class="game-panel" style="display:none;">
+        <div class="room-code-box">
+          <span class="room-code-label">Código de la sala</span>
+          <span class="room-code" id="room-code-display">----</span>
+          <span class="room-code-hint">Compártelo con el grupo para que se unan</span>
+        </div>
+
+        <div class="room-players" id="room-players"></div>
+
+        <!-- Lobby: esperando a empezar -->
+        <div id="game-phase-lobby" class="game-phase">
+          <div id="host-controls-lobby">
+            <label>Nivel de contenido</label>
+            <div class="chip-picker" id="intensity-picker-room">
+              <button type="button" data-value="suave">😄 Suave</button>
+              <button type="button" data-value="picante">🌶️ Picante</button>
+            </div>
+            <button class="primary" id="btn-start-game" disabled>Empezar partida</button>
+            <p class="radar-note">Necesitáis al menos 2 personas en la sala.</p>
+          </div>
+          <p id="waiting-host-lobby" class="game-waiting" style="display:none;">Esperando a que el anfitrión empiece la partida…</p>
+        </div>
+
+        <!-- Ready: esperando girar la ruleta -->
+        <div id="game-phase-ready" class="game-phase" style="display:none;">
+          <div class="wheel-wrap" id="wheel-wrap">
+            <div class="wheel" id="wheel"></div>
+            <div class="wheel-pointer">▼</div>
+          </div>
+          <button class="primary" id="btn-spin">Girar la ruleta 🎯</button>
+          <p id="waiting-host-spin" class="game-waiting" style="display:none;">Esperando a que giren la ruleta…</p>
+        </div>
+
+        <!-- Choosing: la persona seleccionada elige verdad o reto -->
+        <div id="game-phase-choosing" class="game-phase" style="display:none;">
+          <div class="selected-player" id="selected-player-choosing"></div>
+          <div id="my-choice-buttons" style="display:none;">
+            <button class="primary" id="btn-choice-truth">💬 Verdad</button>
+            <button class="ghost" id="btn-choice-dare">🔥 Reto</button>
+          </div>
+          <p id="waiting-choice" class="game-waiting" style="display:none;"></p>
+        </div>
+
+        <!-- Prompt: mostrando la verdad/reto -->
+        <div id="game-phase-prompt" class="game-phase" style="display:none;">
+          <div class="selected-player" id="selected-player-prompt"></div>
+          <div class="prompt-card" id="prompt-card">
+            <span class="prompt-badge" id="prompt-badge">Reto</span>
+            <p class="prompt-text" id="prompt-text"></p>
+          </div>
+          <div id="prompt-buttons-mine" style="display:none;">
+            <button class="ghost" id="btn-pass">Pasar, otra pregunta/reto</button>
+            <button class="primary" id="btn-next-mine">Listo ✅ Siguiente ronda</button>
+          </div>
+          <button class="ghost" id="btn-next-host" style="display:none;">Siguiente ronda</button>
+          <p id="waiting-prompt" class="game-waiting" style="display:none;"></p>
+        </div>
+
+        <button class="ghost" id="btn-leave-room">Salir de la sala</button>
+      </div>
+
     </div>
   </section>
 

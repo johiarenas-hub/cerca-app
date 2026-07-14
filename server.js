@@ -19,11 +19,24 @@
 //     { type: "block", targetId }
 //     { type: "chat", targetId, text }
 //
+//     --- Juego de fiesta "Verdad o Reto" (18+, sala independiente por codigo) ---
+//     { type: "room:create", intensity }
+//     { type: "room:join", code }
+//     { type: "room:leave" }
+//     { type: "room:setIntensity", intensity }
+//     { type: "room:start" }          // solo el host
+//     { type: "room:spin" }           // solo el host
+//     { type: "room:choice", choice } // "truth" | "dare", solo el jugador seleccionado
+//     { type: "room:pass" }           // solo el jugador seleccionado
+//     { type: "room:next" }           // host o jugador seleccionado
+//
 //   Servidor -> Cliente
 //     { type: "welcome", id }
 //     { type: "nearby", users: [{ id, name, emoji, bio, lookingFor, distanceMeters, distanceLabel, liked, matched }] }
 //     { type: "match", id, name, emoji }
 //     { type: "chat", from, text, ts, self? }
+//     { type: "room:state", code, hostId, intensity, phase, players, selectedId, choice, prompt }
+//     { type: "room:error", message }
 //     { type: "error", message }
 //
 // Nota de privacidad: el servidor NUNCA envia lat/lng de un usuario a otro.
@@ -35,6 +48,7 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { WebSocketServer, OPEN } = require("./lib/mini-ws");
+const { createGameModule } = require("./lib/party-game");
 
 const PORT = process.env.PORT || 3000;
 const STATIC_DIR = path.join(__dirname, "public");
@@ -104,6 +118,8 @@ function send(ws, obj) {
   if (ws.readyState === OPEN) ws.send(JSON.stringify(obj));
 }
 
+const gameModule = createGameModule({ clients, send });
+
 wss.on("connection", (ws) => {
   const id = crypto.randomUUID();
   const client = {
@@ -117,6 +133,7 @@ wss.on("connection", (ws) => {
     likes: new Set(), // a quien le di like
     blocked: new Set(),
     matches: new Set(), // ids con match confirmado
+    roomCode: null, // sala del juego "Verdad o Reto" en la que esta, si alguna
   };
   clients.set(id, client);
   send(ws, { type: "welcome", id });
@@ -132,16 +149,19 @@ wss.on("connection", (ws) => {
   });
 
   ws.on("close", () => {
+    gameModule.leaveRoom(client);
     clients.delete(id);
   });
 
   ws.on("error", () => {
+    gameModule.leaveRoom(client);
     clients.delete(id);
   });
 });
 
 function handleMessage(client, msg) {
   if (!msg || typeof msg.type !== "string") return;
+  if (msg.type.startsWith("room:")) return gameModule.handle(client, msg);
   switch (msg.type) {
     case "join": {
       const interests = Array.isArray(msg.interests)
